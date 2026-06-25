@@ -361,10 +361,10 @@
         <div class="flex gap-4">
           <button class="btn"
             style="border: 1px solid var(--primary-color); color: var(--primary-color); background: transparent;"
-            onclick="window.location.href='../gujarat-exgratia-portal/index.html'">
+            onclick="window.location.href = '../gujarat-exgratia-portal/index.html'">
             Citizen Login
           </button>
-          <button class="btn btn-primary" onclick="window.location.href='../gujarat-exgratia-portal/index.html#admin'">
+          <button class="btn btn-primary" onclick="window.location.href = '../gujarat-exgratia-portal/index.html#admin'">
             <i data-lucide="log-in" style="width: 18px; height: 18px;"></i>
             Employees' Login
           </button>
@@ -386,7 +386,7 @@
           processing and timely updates.
         </p>
         <button class="btn btn-accent" style="padding: 0.75rem 1.5rem; font-size: 1.125rem;"
-          onclick="window.location.href='../gujarat-exgratia-portal/index.html'">
+          onclick="window.location.href = window.location.protocol === 'file:' ? '../gujarat-exgratia-portal/index.html' : 'http://localhost:3000/login'">
           <i data-lucide="log-in" style="width: 20px; height: 20px;"></i>
           Login / Apply for Ex-Gratia
         </button>
@@ -669,8 +669,27 @@
     const analytics = getAnalytics(app);
     const db = getFirestore(app);
 
-    // Fetch live stats from LocalStorage & Firestore (Serverless architecture)
+    // Fetch live stats from LocalStorage, Firestore, or local Express backend API
     async function loadStats() {
+      // 1. Try fetching from Local Express API Backend first since it's the primary live database in this setup
+      try {
+        const res = await fetch('http://localhost:5000/api/applications/stats');
+        if (res.ok) {
+          const data = await res.json();
+          renderStats(
+            data.totalApplications,
+            data.disbursedApplications,
+            data.rejectedApplications,
+            data.totalDisbursedAmount
+          );
+          console.log("Stats successfully loaded from Express API backend.");
+          return;
+        }
+      } catch (backendErr) {
+        console.warn("Express API backend stats fetch failed (possibly offline):", backendErr);
+      }
+
+      // 2. Fall back to LocalStorage & Firestore (Serverless architecture fallback)
       try {
         let apps = [];
         const localData = localStorage.getItem('applications');
@@ -684,39 +703,47 @@
           firestoreApps.forEach(fa => {
             if (!apps.find(la => la.id === fa.id)) apps.push(fa);
           });
-        } catch (e) {
-          console.warn("Firestore error while loading stats, using LocalStorage only:", e);
+        } catch (firestoreErr) {
+          console.warn("Firestore error while loading stats, using LocalStorage:", firestoreErr);
         }
 
-        const totalApplications = apps.length;
-        const disbursedApplications = apps.filter(a => a.status === 'approved').length;
-        const rejectedApplications = apps.filter(a => a.status === 'rejected').length;
-        
-        // 4 Lakhs per approved application
-        const totalDisbursedAmount = disbursedApplications * 400000;
+        if (apps.length > 0) {
+          const totalApplications = apps.length;
+          const disbursedApplications = apps.filter(a => a.status === 'approved').length;
+          const rejectedApplications = apps.filter(a => a.status === 'rejected').length;
+          const totalDisbursedAmount = disbursedApplications * 500000;
 
-        document.getElementById('stat-total').innerText = totalApplications.toLocaleString('en-IN');
-        document.getElementById('stat-disbursed').innerText = disbursedApplications.toLocaleString('en-IN');
-        document.getElementById('stat-rejected').innerText = rejectedApplications.toLocaleString('en-IN');
-        
-        let amtStr = '₹ 0';
-        if (totalDisbursedAmount >= 10000000) {
-          amtStr = `₹ ${(totalDisbursedAmount / 10000000).toFixed(2)} Cr`;
-        } else if (totalDisbursedAmount >= 100000) {
-          amtStr = `₹ ${(totalDisbursedAmount / 100000).toFixed(2)} Lakhs`;
-        } else {
-          amtStr = `₹ ${totalDisbursedAmount.toLocaleString('en-IN')}`;
+          renderStats(totalApplications, disbursedApplications, rejectedApplications, totalDisbursedAmount);
+          console.log("Stats loaded from LocalStorage / Firestore.");
+          return;
         }
-        document.getElementById('stat-amount').innerText = amtStr;
-
-      } catch (err) {
-        console.error("Failed to load stats:", err);
-        // Fallback static values
-        document.getElementById('stat-total').innerText = "12,450";
-        document.getElementById('stat-disbursed').innerText = "9,820";
-        document.getElementById('stat-rejected').innerText = "1,130";
-        document.getElementById('stat-amount').innerText = "₹ 1000.5 Cr";
+      } catch (storageErr) {
+        console.error("Storage fallback failed:", storageErr);
       }
+
+      // 3. Fall back to realistic pre-populated mock stats
+      console.log("Using realistic pre-populated mock stats fallback.");
+      const mockTotal = 17354;
+      const mockDisbursed = 14843;
+      const mockRejected = 129;
+      const mockAmount = mockDisbursed * 500000; // 7421.50 Cr
+      renderStats(mockTotal, mockDisbursed, mockRejected, mockAmount);
+    }
+
+    function renderStats(total, disbursed, rejected, amount) {
+      document.getElementById('stat-total').innerText = total.toLocaleString('en-IN');
+      document.getElementById('stat-disbursed').innerText = disbursed.toLocaleString('en-IN');
+      document.getElementById('stat-rejected').innerText = rejected.toLocaleString('en-IN');
+      
+      let amtStr = '₹ 0';
+      if (amount >= 10000000) {
+        amtStr = `₹ ${(amount / 10000000).toFixed(2)} Cr`;
+      } else if (amount >= 100000) {
+        amtStr = `₹ ${(amount / 100000).toFixed(2)} Lakhs`;
+      } else {
+        amtStr = `₹ ${amount.toLocaleString('en-IN')}`;
+      }
+      document.getElementById('stat-amount').innerText = amtStr;
     }
 
     // Call loadStats after page is loaded
